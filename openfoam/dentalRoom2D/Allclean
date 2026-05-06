@@ -1,0 +1,14 @@
+#!/bin/sh
+cd "${0%/*}" || exit 1
+. "${WM_PROJECT_DIR:?WM_PROJECT_DIR not set -- source foam-extend 4.1 first}/bin/tools/CleanFunctions"
+
+cleanCase
+rm -rf 0/uniform
+rm -rf lagrangian VTK
+rm -f  PyFoamHistory PyFoam*.analyzed
+# Keep the blockMeshDict; only strip the generated mesh files.
+rm -rf constant/polyMesh/boundary constant/polyMesh/faces* \
+       constant/polyMesh/neighbour* constant/polyMesh/owner* \
+       constant/polyMesh/points* constant/polyMesh/cellZones* \
+       constant/polyMesh/faceZones* constant/polyMesh/pointZones* \
+       constant/polyMesh/sets

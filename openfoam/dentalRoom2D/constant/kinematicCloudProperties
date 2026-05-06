@@ -1,0 +1,109 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | foam-extend: Open Source CFD                    |
+|  \\    /   O peration     | Version:     4.1                                |
+|   \\  /    A nd           | Web:         http://www.foam-extend.org         |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      kinematicCloudProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+active yes;
+
+// Particle sub-models  (capitalised names are the foam-extend 4.1 convention)
+InjectionModel                  ConeInjection;
+DragModel                       SphereDrag;
+DispersionModel                 StochasticDispersionRAS;
+PatchInteractionModel           StandardWallInteraction;
+PostProcessingModel             none;
+
+// Parcel basis type
+parcelBasisType                 mass;
+
+constantProperties
+{
+    rhoMin          rhoMin          [ 1 -3  0  0  0]  1e-15;
+    minParticleMass minParticleMass [ 1  0  0  0  0]  1e-15;
+
+    // Dispersed-phase properties  (water-like biofluid droplets)
+    rho0            rho0            [ 1 -3  0  0  0]  1000;
+}
+
+// One-way coupled: particles do not feed back to the carrier momentum equations
+coupled                         false;
+
+cellValueSourceCorrection       off;
+
+// Integer used to identify this parcel type
+parcelTypeId                    1;
+
+interpolationSchemes
+{
+    rho             cell;
+    U               cellPointFace;
+    mu              cell;
+}
+
+integrationSchemes
+{
+    U               Euler;
+}
+
+particleForces
+{
+    gravity             on;
+    virtualMass         off;
+    pressureGradient    off;
+}
+
+// ----------------------------------------------------------------------
+// Cone injection: dental spray aimed upward from above the patient head.
+// position/direction replace the OF-7 positionAxis compound entry.
+// parcelPDF block replaces the OF-7 sizeDistribution block.
+// ----------------------------------------------------------------------
+ConeInjectionCoeffs
+{
+    SOI                 0.0;
+    parcelBasisType     mass;
+    duration            30.0;
+    position            ( 2.0  1.30  0.005 );
+    direction           ( 0  1  0 );
+    parcelsPerSecond    5000;
+    volumeFlowRate      constant 4.167e-09;  // massFlow/rho = 5e-3/(1000*30)/5000
+    Umag                constant 10.0;
+    thetaInner          constant 0.0;
+    thetaOuter          constant 20.0;
+
+    parcelPDF
+    {
+        pdfType         RosinRammler;
+        RosinRammlerPDF
+        {
+            minValue    1e-06;
+            maxValue    5e-05;
+            d           ( 2e-05 );
+            n           ( 2.0 );
+        }
+    }
+
+    // Total mass to inject over the full duration [kg]
+    massTotal  massTotal [ 1  0  0  0  0]  5e-3;
+}
+
+StochasticDispersionRASCoeffs
+{
+}
+
+StandardWallInteractionCoeffs
+{
+    // stick: parcels that hit a wall stay there (worst-case deposition)
+    type            stick;
+}
+
+// ************************************************************************* //

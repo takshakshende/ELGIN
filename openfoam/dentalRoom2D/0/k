@@ -1,0 +1,62 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | foam-extend: Open Source CFD                    |
+|  \\    /   O peration     | Version:     4.1                                |
+|   \\  /    A nd           | Web:         http://www.foam-extend.org         |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    location    "0";
+    object      k;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 2 -2 0 0 0 0];
+
+internalField   uniform 0.001;
+
+boundaryField
+{
+    airOutlet
+    {
+        type            inletOutlet;
+        inletValue      uniform 0.001;
+        value           uniform 0.001;
+    }
+    floor
+    {
+        type            compressible::kqRWallFunction;
+        value           uniform 0.001;
+    }
+    ceiling
+    {
+        type            compressible::kqRWallFunction;
+        value           uniform 0.001;
+    }
+    airInlet
+    {
+        type            fixedValue;
+        value           uniform 0.001;
+    }
+    leftWall
+    {
+        type            compressible::kqRWallFunction;
+        value           uniform 0.001;
+    }
+    rightWall
+    {
+        type            compressible::kqRWallFunction;
+        value           uniform 0.001;
+    }
+    frontAndBack
+    {
+        type            empty;
+    }
+}
+
+
+// ************************************************************************* //

@@ -1,0 +1,11 @@
+torch>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+matplotlib>=3.7.0
+tqdm>=4.65.0
+# Optional — only needed for rollout animation
+# ffmpeg must be installed system-wide for MP4 output
+pillow>=9.0.0
+
+# OpenFOAM data extraction (optional — only if using raw OpenFOAM cases)
+# vtk>=9.2.0
