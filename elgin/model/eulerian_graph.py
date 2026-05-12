@@ -1,30 +1,4 @@
 ﻿"""EulerianGNN — MeshGraphNet-style fluid field predictor.
-
-Improvements (Round 1 + Round 2)
-----------------------------------
-#5  Single-head attention gate     (kept for cfg.use_graph_transformer=False)
-#6  Face-type embedding in edges
-
-S5  Graph Transformer with multi-head scaled-dot-product attention.
-    Replaces the sigmoid gate when cfg.use_graph_transformer=True.
-
-    Multi-head attention:
-        Q_i   = W_Q h_i,   K_j   = W_K h_j,   V_ij = W_V e_{ij}
-        alpha_{ij}^h = softmax_j( (Q_i^h . K_j^h) / sqrt(d_k) )
-        m_i   = W_O concat_h( sum_j alpha_{ij}^h * V_{ij}^h )
-
-    Compared to the single-head sigmoid gate:
-      - softmax normalisation prevents attention collapse
-      - multiple heads attend to different physical scales simultaneously
-        (turbulent fluctuations vs mean convective flow)
-      - interpretable attention maps for ablation analysis
-
-    References
-    ----------
-    - Brody, Alon & Yahav (2022) GAT v2
-    - Shi et al. (2021) Masked Label Prediction (Graph Transformer)
-    - Pfaff et al. (2021) MeshGraphNets — Eulerian mesh GNN
-    - Review paper Section 4.3
 """
 
 from __future__ import annotations
@@ -198,11 +172,7 @@ class FluidInteractionBlock(nn.Module):
 # ---------------------------------------------------------------------------
 
 class EulerianGNN(nn.Module):
-    """GNN for the RANS fluid field with Graph Transformer processor (S5).
-
-    Processor chooses:
-        use_graph_transformer=True  : GraphTransformerBlock  (S5, default)
-        use_graph_transformer=False : FluidInteractionBlock  (Round-1 #5)
+    """GNN for the RANS fluid field with Graph Transformer processor.
     """
 
     def __init__(self, cfg: CfdGNNConfig):

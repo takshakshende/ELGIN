@@ -1,9 +1,9 @@
 /*--------------------------------*- C++ -*----------------------------------*\
-|    =========                 |                                              |
-|    \\      /  F ield         | foam-extend: Open Source CFD                 |
-|     \\    /   O peration     | Version:     4.1                             |
-|      \\  /    A nd           | Web:         http://www.foam-extend.org      |
-|       \\/     M anipulation  |                                              |
+| =========                 |                                                 |
+| \\      /  F ield         | foam-extend: Open Source CFD                    |
+|  \\    /   O peration     | Version:     4.1                                |
+|   \\  /    A nd           | Web:         http://www.foam-extend.org         |
+|    \\/     M anipulation  |                                                 |
 \*---------------------------------------------------------------------------*/
 FoamFile
 {
@@ -15,13 +15,20 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-application     uncoupledKinematicParcelFoam;
+
+libs
+(
+    "liblduSolvers.so"
+);
+
+application     reactingParcelFoam;
 
 startFrom       startTime;
 startTime       0;
 
 stopAt          endTime;
-endTime         30.0;
+
+endTime         30;
 
 deltaT          0.005;
 
@@ -29,18 +36,23 @@ writeControl    adjustableRunTime;
 writeInterval   0.1;
 
 purgeWrite      0;
-
 writeFormat     ascii;
-writePrecision  8;
-writeCompression off;
+writePrecision  10;
+writeCompression uncompressed;
 
 timeFormat      general;
 timePrecision   6;
 
-runTimeModifiable true;
+runTimeModifiable yes;
 
 adjustTimeStep  yes;
-maxCo           0.8;
+maxCo           0.3;
 maxDeltaT       0.01;
+
+// -----------------------------------------------------------------------
+// Function objects
+// -----------------------------------------------------------------------
+// 
+// functions {}
 
 // ************************************************************************* //

@@ -17,18 +17,18 @@ Optionally also loads ``gt.npz`` (same structure) for a side-by-side panel.
 Usage
 -----
     # Single panel (GNN only, fluid + particles)
-    python cfd_gnn/animate_fluid_particles.py \\
-        --rollout experiments/cfd_gnn_case03/results/checks/<run>/rollout.npz \\
+    python elgin/animate_fluid_particles.py \\
+        --rollout experiments/elgin_case03/results/rollouts/rollout.npz \\
         --output  fluid_particles.mp4
 
     # Two-panel: GNN | GT  (fluid background on both)
-    python cfd_gnn/animate_fluid_particles.py \\
-        --rollout experiments/cfd_gnn_case03/results/checks/<run>/rollout.npz \\
-        --gt      experiments/cfd_gnn_case03/results/checks/<run>/gt.npz \\
+    python elgin/animate_fluid_particles.py \\
+        --rollout experiments/elgin_case03/results/rollouts/rollout.npz \\
+        --gt      experiments/elgin_case03/results/rollouts/gt.npz \\
         --output  fluid_particles_compare.mp4
 
     # Show velocity vectors instead of stream lines
-    python cfd_gnn/animate_fluid_particles.py --rollout ... --mode quiver
+    python elgin/animate_fluid_particles.py --rollout ... --mode quiver
 
 Fluid display options (--mode):
     speed      — colour-map of |U| = sqrt(Ux²+Uy²)             [default]

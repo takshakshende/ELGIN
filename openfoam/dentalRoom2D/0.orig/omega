@@ -1,0 +1,51 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | foam-extend: Open Source CFD                    |
+|  \\    /   O peration     | Version:     4.1                                |
+|   \\  /    A nd           | Web:         http://www.foam-extend.org         |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    location    "0";
+    object      omega;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+
+dimensions      [0 0 -1 0 0 0 0];
+
+internalField   uniform 0.7986;
+
+boundaryField
+{
+    airInlet
+    {
+        type            fixedValue;
+        value           uniform 0.7986;
+    }
+
+    airOutlet
+    {
+        type            inletOutlet;
+        inletValue      uniform 2.0;
+        value           uniform 2.0;
+    }
+
+    floor              { type omegaWallFunction; value uniform 2.0; }
+    ceiling            { type omegaWallFunction; value uniform 2.0; }
+    leftWall           { type omegaWallFunction; value uniform 2.0; }
+    rightWall          { type omegaWallFunction; value uniform 2.0; }
+    dentistObstacle    { type omegaWallFunction; value uniform 2.0; }
+    patientObstacle    { type omegaWallFunction; value uniform 2.0; }
+
+    frontAndBack
+    {
+        type            empty;
+    }
+}
+
+// ************************************************************************* //

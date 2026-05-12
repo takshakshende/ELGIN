@@ -1,33 +1,4 @@
 ﻿"""TurbulenceClosure — learned and analytic k-ω SST surrogate.
-
-The turbulent viscosity ν_t is required by the Eulerian GNN to close the
-momentum equation. This module provides two options:
-
-Option A — Analytic k-ω SST closure (default, physics-exact):
-    ν_t = min(k/ω,  a1·k / max(a1·ω, Ω·F2))
-    where F1, F2 are SST blending functions computed from [k, ω, d_wall].
-
-Option B — Learned closure (data-driven residual):
-    ν_t = ν_t^{SST} + δν_t
-    where δν_t is a correction predicted by an MLP from
-    [k, ω, d_wall, |S_ij|].
-
-Mathematical basis (k-ω SST, Menter 1994)
-------------------------------------------
-ν_t = a1 k / max(a1 ω, Ω F2)
-
-where:
-    Ω   = √(2 W_ij W_ij)            vorticity magnitude
-    S   = √(2 S_ij S_ij)            strain-rate magnitude
-    P_k = min(ν_t S², 10 β* k ω)   turbulent production
-
-Blending functions:
-    arg1 = min(max(√k/(β*ωd), 500ν/(ωd²)), 4σ_ω2 k/(CDkω d²))
-    F1   = tanh(arg1⁴)
-    arg2 = max(2√k/(β*ωd), 500ν/(ωd²))
-    F2   = tanh(arg2²)
-
-    CDkω = max(2ρσ_ω2/ω · ∇k·∇ω, 1e-10)
 """
 
 from __future__ import annotations

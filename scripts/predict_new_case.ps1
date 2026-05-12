@@ -1,6 +1,6 @@
 ﻿# =============================================================================
 #  predict_new_case.ps1
-#  Run CFD-GNN inference on an UNKNOWN situation using the trained model.
+#  Run ELGIN inference on an UNKNOWN situation using the trained model.
 #
 #  Inputs accepted
 #  ---------------
@@ -13,33 +13,27 @@
 #    rollout.npz           raw trajectory data (fluid + particles)
 #    clinical_metrics.json exposure / deposition fractions
 #    fluid_particles.mp4   animated air speed + aerosol prediction
-#    compare.mp4           side-by-side GNN vs GT  (only if -GtNpz given)
+#    compare.mp4           side-by-side ELGIN vs GT  (only if -GtNpz given)
 #    logs\                 extraction + rollout + animation logs
 #
 #  Usage examples
 #  --------------
 #    # Predict from an already-extracted NPZ
 #    cd $PSScriptRoot\..
-#    .\predict_new_case.ps1 `
-#        -InputPath "experiments\cfd_gnn_20cases\datasets\case_21.npz" `
-#        -OutputDir "predictions\case_21"
+#    .\scripts\predict_new_case.ps1 `
+#        -InputPath "experiments\elgin_case03\datasets\case_single.npz" `
+#        -OutputDir "predictions\sweep_case_03"
 #
 #    # Predict straight from a raw OpenFOAM directory
-#    .\predict_new_case.ps1 `
-#        -InputPath "D:\openfoam\Sweep_Case_21" `
-#        -OutputDir "predictions\case_21"
-#
-#    # Use a different trained model (e.g. single-case model)
-#    .\predict_new_case.ps1 `
-#        -InputPath "experiments\cfd_gnn_20cases\datasets\case_21.npz" `
-#        -ModelDir  "experiments\cfd_gnn_case03\models" `
-#        -OutputDir "predictions\case_21_single_model"
+#    .\scripts\predict_new_case.ps1 `
+#        -InputPath "D:\openfoam\Sweep_Case_03" `
+#        -OutputDir "predictions\sweep_case_03"
 #
 #    # Compare against ground truth (e.g. validate on a known case)
-#    .\predict_new_case.ps1 `
-#        -InputPath "experiments\cfd_gnn_20cases\datasets\case_05.npz" `
-#        -GtNpz     "experiments\cfd_gnn_20cases\datasets\case_05.npz" `
-#        -OutputDir "predictions\case_05_validation"
+#    .\scripts\predict_new_case.ps1 `
+#        -InputPath "experiments\elgin_case03\datasets\case_single.npz" `
+#        -GtNpz     "experiments\elgin_case03\datasets\case_single.npz" `
+#        -OutputDir "predictions\sweep_case_03_validation"
 # =============================================================================
 
 [CmdletBinding()]
@@ -52,8 +46,8 @@ param(
     [string] $OutputDir    = "predictions\new_case",
 
     # ── Optional: model / mesh ─────────────────────────────────────────────
-    [string] $ModelDir     = "experiments\cfd_gnn_20cases\models",
-    [string] $MeshPath     = "experiments\cfd_gnn_20cases\datasets\mesh_graph.npz",
+    [string] $ModelDir     = "experiments\elgin_case03\models",
+    [string] $MeshPath     = "experiments\elgin_case03\datasets\mesh_graph.npz",
 
     # ── Optional: comparison ground truth ─────────────────────────────────
     [string] $GtNpz        = "",        # leave blank for prediction-only mode
@@ -85,7 +79,7 @@ Set-Location $ROOT
 $line = "=" * 68
 Write-Host ""
 Write-Host $line                        -ForegroundColor Cyan
-Write-Host "  CFD-GNN  Prediction for Unknown Case" -ForegroundColor Cyan
+Write-Host "  ELGIN  Prediction for Unknown Case" -ForegroundColor Cyan
 Write-Host $line                        -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Input      : $InputPath"
@@ -100,8 +94,7 @@ Write-Host ""
 $bestPt = Join-Path $ROOT "$ModelDir\best.pt"
 if (-not (Test-Path $bestPt)) {
     Write-Host "[ERROR] Trained model not found: $bestPt" -ForegroundColor Red
-    Write-Host "  Train first with:  .\run_20cases.ps1" -ForegroundColor Yellow
-    Write-Host "  or single case:    .\run_case03.ps1"  -ForegroundColor Yellow
+    Write-Host "  Train first with:  .\scripts\run_training.ps1" -ForegroundColor Yellow
     exit 1
 }
 
@@ -109,7 +102,7 @@ if (-not (Test-Path $bestPt)) {
 #  Build Python command
 # =============================================================================
 $pyArgs = @(
-    "python", "-u", "cfd_gnn\predict_new_case.py",
+    "python", "-u", "elgin\predict_new_case.py",
     "--input",       $InputPath,
     "--model_dir",   $ModelDir,
     "--mesh",        $MeshPath,
@@ -164,7 +157,7 @@ if ($GtNpz -ne "") {
 }
 Write-Host ""
 Write-Host "  To re-animate with different settings:"
-Write-Host "    python cfd_gnn\animate_fluid_particles.py ``"
+Write-Host "    python elgin\animate_fluid_particles.py ``"
 Write-Host "        --rollout $(Join-Path $OutputDir 'rollout.npz') ``"
 Write-Host "        --output  my_animation.mp4 --mode speed --fps 10"
 Write-Host ""

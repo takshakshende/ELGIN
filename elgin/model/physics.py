@@ -1,21 +1,4 @@
-﻿"""physics.py — Analytical physics kernels for the CFD-GNN.
-
-All functions are pure PyTorch operations (differentiable, GPU-compatible).
-
-Functions
----------
-cunningham_correction        Cunningham slip correction for sub-micron particles
-stokes_drag_acc              Stokes drag acceleration with Cunningham correction
-evaporation_diameter         Wells' law droplet evaporation  (S2)
-saffman_lift_acc             Saffman shear-lift force        (S6)
-brownian_sigma               Brownian diffusion coefficient  (S11)
-turbulent_dispersion_kick    Stochastic TKE-based velocity kick  (S3/S11)
-gravity_vector               Gravity vector for dim-D domain
-
-References
-----------
-Cunningham (1910), Stokes (1851), Wells (1934), Saffman (1965),
-Einstein (1905), McLaughlin (1991), Pope (2000).
+﻿"""physics.py — Analytical physics kernels for ELGIN.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-﻿"""predict_new_case.py — Run CFD-GNN inference on an unknown situation.
+﻿"""predict_new_case.py — Run ELGIN inference on an unknown situation.
 
 This script is the single entry-point for predicting aerosol transport in a
 room geometry that was NOT part of training.  It can accept input in two ways:
@@ -7,7 +7,7 @@ room geometry that was NOT part of training.  It can accept input in two ways:
   2. A raw OpenFOAM case directory  (extraction happens automatically)
 
 It then:
-  • Runs the CFD-GNN rollout (freeze_fluid mode — uses the RANS fluid field
+  • Runs the ELGIN rollout (freeze_fluid mode — uses the RANS fluid field
     embedded in the NPZ as a frozen background; only the particle GNN runs
     autoregressively).
   • Saves rollout.npz with fluid + particle trajectories.
@@ -20,32 +20,32 @@ It then:
 Usage
 -----
   # From an already-extracted NPZ
-  python cfd_gnn/predict_new_case.py \\
-      --input      experiments/cfd_gnn_20cases/datasets/case_21.npz \\
-      --mesh       experiments/cfd_gnn_20cases/datasets/mesh_graph.npz \\
-      --model_dir  experiments/cfd_gnn_20cases/models \\
-      --output_dir predictions/case_21
+  python elgin/predict_new_case.py \\
+      --input      experiments/elgin_case03/datasets/case_single.npz \\
+      --mesh       experiments/elgin_case03/datasets/mesh_graph.npz \\
+      --model_dir  experiments/elgin_case03/models \\
+      --output_dir predictions/new_case
 
   # From a raw OpenFOAM directory (extraction runs automatically)
-  python cfd_gnn/predict_new_case.py \\
-      --input      D:/openfoam/Sweep_Case_21 \\
-      --mesh       experiments/cfd_gnn_20cases/datasets/mesh_graph.npz \\
-      --model_dir  experiments/cfd_gnn_20cases/models \\
-      --output_dir predictions/case_21
+  python elgin/predict_new_case.py \\
+      --input      D:/openfoam/Sweep_Case_03 \\
+      --mesh       experiments/elgin_case03/datasets/mesh_graph.npz \\
+      --model_dir  experiments/elgin_case03/models \\
+      --output_dir predictions/sweep_case_03
 
   # Custom inlet velocity (overrides what is in the NPZ)
-  python cfd_gnn/predict_new_case.py \\
-      --input      D:/openfoam/Sweep_Case_21 \\
-      --model_dir  experiments/cfd_gnn_20cases/models \\
-      --u_inlet    0.8 \\
-      --output_dir predictions/case_21
+  python elgin/predict_new_case.py \\
+      --input      D:/openfoam/Sweep_Case_03 \\
+      --model_dir  experiments/elgin_case03/models \\
+      --u_inlet    0.20 \\
+      --output_dir predictions/sweep_case_03_vin020
 
   # Compare against known GT (shows both GNN and GT in animation)
-  python cfd_gnn/predict_new_case.py \\
-      --input      experiments/cfd_gnn_20cases/datasets/case_05.npz \\
-      --gt_npz     experiments/cfd_gnn_20cases/datasets/case_05.npz \\
-      --model_dir  experiments/cfd_gnn_20cases/models \\
-      --output_dir predictions/case_05_check
+  python elgin/predict_new_case.py \\
+      --input      experiments/elgin_case03/datasets/case_single.npz \\
+      --gt_npz     experiments/elgin_case03/datasets/case_single.npz \\
+      --model_dir  experiments/elgin_case03/models \\
+      --output_dir predictions/sweep_case_03_check
 """
 
 from __future__ import annotations
@@ -68,11 +68,11 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 
 _PYTHON  = sys.executable
 _ROOT    = pathlib.Path(__file__).resolve().parent.parent
-_CFD_GNN = pathlib.Path(__file__).resolve().parent
+_ELGIN   = pathlib.Path(__file__).resolve().parent
 
-# Default model location (train_20cases.py output)
-_DEFAULT_MODEL = _ROOT / "experiments" / "cfd_gnn_20cases" / "models"
-_DEFAULT_MESH  = _ROOT / "experiments" / "cfd_gnn_20cases" / "datasets" / "mesh_graph.npz"
+# Default model location (single-case checkpoint shipped with the repo)
+_DEFAULT_MODEL = _ROOT / "experiments" / "elgin_case03" / "models"
+_DEFAULT_MESH  = _ROOT / "experiments" / "elgin_case03" / "datasets" / "mesh_graph.npz"
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ def _extract_from_openfoam(
     """Extract fluid + particle data from a raw OpenFOAM case."""
     _hline(f"Extracting from OpenFOAM: {case_dir.name}")
     cmd = [
-        _PYTHON, str(_CFD_GNN / "data" / "extract_fields.py"),
+        _PYTHON, str(_ELGIN / "data" / "extract_fields.py"),
         "--case_dir",    str(case_dir),
         "--output",      str(out_npz),
         "--t_start",     str(t_start),
@@ -164,12 +164,12 @@ def _run_rollout(
     device:      str,
     log_dir:     pathlib.Path,
 ) -> pathlib.Path:
-    """Run CFD-GNN forward simulation."""
-    _hline("Running CFD-GNN rollout")
+    """Run ELGIN forward simulation."""
+    _hline("Running ELGIN rollout")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = [
-        _PYTHON, str(_CFD_GNN / "rollout.py"),
+        _PYTHON, str(_ELGIN / "rollout.py"),
         "--model_dir",   str(model_dir),
         "--mesh",        str(mesh_path),
         "--ic_file",     str(ic_file),
@@ -227,7 +227,7 @@ def _animate(
     # 4a — fluid speed colourmap + particles  (always produced)
     fluid_out = out_dir / "fluid_particles.mp4"
     fluid_args = [
-        _PYTHON, str(_CFD_GNN / "animate_fluid_particles.py"),
+        _PYTHON, str(_ELGIN / "animate_fluid_particles.py"),
         "--rollout",       str(rollout_npz),
         "--output",        str(fluid_out),
         "--mode",          "speed",
@@ -244,7 +244,7 @@ def _animate(
     if gt_npz is not None and gt_npz.exists():
         compare_out = out_dir / "compare.mp4"
         _run([
-            _PYTHON, str(_CFD_GNN / "render_compare.py"),
+            _PYTHON, str(_ELGIN / "render_compare.py"),
             "--rollout", str(rollout_npz),
             "--truth",   str(gt_npz),
             "--output",  str(compare_out),
@@ -320,7 +320,7 @@ def main() -> None:
 
     t_start_wall = time.time()
 
-    _hline("CFD-GNN  Prediction for Unknown Case")
+    _hline("ELGIN  Prediction for Unknown Case")
     print(f"  Input        : {args.input}")
     print(f"  Model dir    : {args.model_dir}")
     print(f"  Mesh         : {args.mesh}")
@@ -334,7 +334,7 @@ def main() -> None:
     best_pt = args.model_dir / "best.pt"
     if not best_pt.exists():
         print(f"[ERROR] Trained model not found: {best_pt}")
-        print("  Train the model first with run_20cases.ps1 (or run_case03.ps1).")
+        print("  Train the model first with scripts\\run_training.ps1.")
         sys.exit(1)
 
     if not args.mesh.exists():
@@ -398,7 +398,7 @@ def main() -> None:
         print(f"  Animation      : {out_dir / 'fluid_particles.mp4'}")
     print()
     print("  To re-run animation only:")
-    print(f"    python cfd_gnn/animate_fluid_particles.py \\")
+    print(f"    python elgin/animate_fluid_particles.py \\")
     print(f"        --rollout {rollout_npz} \\")
     print(f"        --output  {out_dir / 'fluid_particles.mp4'}")
     _hline()

@@ -15,9 +15,6 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// foam-extend 4.1 convention: this file only selects the turbulence family;
-// the specific RAS model is specified in constant/RASProperties.
-
-simulationType      RASModel;
+simulationType  RASModel;
 
 // ************************************************************************* //

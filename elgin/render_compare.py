@@ -1,20 +1,12 @@
 ﻿"""render_compare.py -- Side-by-side animation of OpenFOAM ground truth vs
-CFD-GNN predicted particle trajectories.
-
-The CFD-GNN rollout writes ``rollout.npz`` containing ``particle_traj``
-of shape (T, N_part, 2).  The OpenFOAM ground-truth trajectories live in
-``datasets/dentalSpray/run_XX.npz`` (already produced by ``sweep.sh``)
-and have a ``positions`` array of shape (T_gt, N_gt, 2).
-
-This script renders a 2-panel animation comparing the two clouds frame by
-frame, mirroring ``gns.render`` for the particle-only pipeline.
+ELGIN predicted particle trajectories.
 
 Example
 -------
-    python cfd_gnn/render_compare.py \\
-        --rollout datasets/cfd_gnn/rollout/rollout.npz \\
-        --truth   datasets/dentalSpray/run_00.npz \\
-        --output  results/cfd_gnn/animation_run00.mp4
+    python elgin/render_compare.py \\
+        --rollout experiments/elgin_case03/results/rollouts/rollout.npz \\
+        --truth   experiments/elgin_case03/results/rollouts/gt.npz \\
+        --output  experiments/elgin_case03/results/animations/compare.mp4
 
 If ffmpeg is not on PATH the script falls back automatically to .gif via
 matplotlib's PillowWriter.
@@ -51,7 +43,7 @@ def _load_truth(path: pathlib.Path) -> np.ndarray:
 
 
 def _load_pred(path: pathlib.Path) -> np.ndarray:
-    """Load CFD-GNN predicted particle trajectory of shape (T, N, 2)."""
+    """Load ELGIN predicted particle trajectory of shape (T, N, 2)."""
     data = np.load(path, allow_pickle=True)
     if "particle_traj" in data.files:
         traj = np.asarray(data["particle_traj"])
@@ -86,10 +78,10 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--rollout", type=pathlib.Path, required=True,
-                        help="CFD-GNN rollout .npz (from cfd_gnn/rollout.py).")
+                        help="ELGIN rollout .npz (from elgin/rollout.py).")
     parser.add_argument("--truth",   type=pathlib.Path, required=True,
                         help="OpenFOAM ground-truth trajectory .npz "
-                             "(e.g. datasets/dentalSpray/run_00.npz).")
+                             "(e.g. experiments/elgin_case03/results/rollouts/gt.npz).")
     parser.add_argument("--output",  type=pathlib.Path, required=True,
                         help="Output animation file (.mp4 or .gif).")
     parser.add_argument("--fps",       type=int,   default=20)
@@ -128,7 +120,7 @@ def main() -> None:
     )
     for ax, title in [
         (ax_truth, "OpenFOAM ground truth (reactingParcelFoam)"),
-        (ax_pred,  "CFD-GNN prediction"),
+        (ax_pred,  "ELGIN prediction"),
     ]:
         ax.set_xlim(xmin, xmax)
         ax.set_ylim(ymin, ymax)

@@ -1,26 +1,10 @@
-﻿"""transfer.py — Transfer-learning utilities for the CFD-GNN.
-
-Improvement S13
----------------
-Load pre-trained weights from a GNS (Graph Network Simulator) checkpoint
-into the LagrangianGNN, enabling warm-starting from the large-scale GNS
-models trained on particle simulations (Sanchez-Gonzalez et al. 2020).
-
-The weight mapping is performed by matching tensor shapes, so it works
-regardless of the exact key names used in the GNS checkpoint.  Keys that
-cannot be matched (due to shape mismatch or new modules) are skipped with
-a warning.
+﻿"""transfer.py — Transfer-learning utilities for ELGIN.
 
 Usage
 -----
     from elgin.utils.transfer import load_gns_into_lagrangian
     load_gns_into_lagrangian(model.lagrangian_gnn, "gns_checkpoint.pt")
 
-References
-----------
-- Sanchez-Gonzalez et al. (2020) Learning to Simulate Complex Physics
-- Pan & Yang (2009) A Survey on Transfer Learning — IEEE TKDE
-- Bonnet et al. (2022) AirfRANS — transfer learning for CFD GNNs
 """
 
 from __future__ import annotations

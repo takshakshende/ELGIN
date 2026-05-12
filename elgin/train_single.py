@@ -1,46 +1,39 @@
-﻿"""train_single.py — Train CFD-GNN on a single OpenFOAM case.
+﻿"""train_single.py — Train ELGIN on a single OpenFOAM case.
 
 Runs the full extract → mesh-build → train pipeline for ONE case only.
-Useful for quick experiments, debugging, or verifying the framework before
-committing to a 20-case training run.
-
-With default settings (100 total epochs split across 4 stages) training
-finishes in approximately 30–60 minutes on an NVIDIA GPU, or 2–4 hours on CPU.
 
 Usage examples
 --------------
-    # Minimal — point at one OpenFOAM case directory
-    python cfd_gnn/train_single.py \\
-        --case_dir openfoam/Sweep_Case_03 \\
+    # Minimal — point at the single OpenFOAM case directory
+    python elgin/train_single.py \\
+        --case_dir openfoam/dentalRoom2D \\
         --device   cuda
 
     # Fast smoke-test with synthetic data (no OpenFOAM needed)
-    python cfd_gnn/train_single.py --synthetic
+    python elgin/train_single.py --synthetic
 
-    # Custom epoch budget and output location
-    python cfd_gnn/train_single.py \\
-        --case_dir openfoam/Sweep_Case_03 \\
-        --epochs   100 \\
-        --model_dir models/cfd_gnn_single \\
-        --device   cuda
+    # Paper-spec recipe (single-case checkpoint)
+    python elgin/train_single.py \\
+        --case_dir   openfoam/dentalRoom2D \\
+        --epochs     300 \\
+        --hidden_size 64 \\
+        --mp_steps    4 \\
+        --bptt_steps  5 \\
+        --model_dir  experiments/elgin_case03/models \\
+        --device     cuda
 
     # Skip extraction if case_single.npz already exists
-    python cfd_gnn/train_single.py \\
-        --case_dir openfoam/Sweep_Case_03 \\
+    python elgin/train_single.py \\
+        --case_dir openfoam/dentalRoom2D \\
         --skip_extract \\
         --device cuda
 
 Stage epoch budget (sums to --epochs):
-    Stage 1  fluid pre-training          10 %  (short — rollout uses
-                                                 --freeze_fluid by default)
-    Stage 2  particle supervised         50 %  (one-step parcel MSE)
-    Stage 3  PDE-informed joint          10 %  (continuity / momentum / k-omega)
-    Stage 4  BPTT rollout fine-tuning    30 %  (Sanchez-Gonzalez 2020 fix)
+    Stage 1  fluid pre-training          20 %  (paper Sec. IV; Eulerian warm-start)
+    Stage 2  particle supervised         20 %  (one-step parcel MSE + noise aug.)
+    Stage 3  PDE-informed joint          40 %  (continuity / momentum / k-omega)
+    Stage 4  BPTT rollout fine-tuning    20 %  (Sanchez-Gonzalez et al. 2020 fix)
 
-By default the model uses LSTM history encoding, the symplectic integrator,
-SE(2)-equivariant edges and the BPTT rollout loss.  The stochastic decoder,
-Saffman lift, Brownian motion, evaporation and heterogeneous-graph features
-are off (pass --full_model to also turn those on).
 """
 
 from __future__ import annotations
@@ -60,12 +53,12 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 
 _PYTHON     = sys.executable
 _ROOT       = pathlib.Path(__file__).resolve().parent.parent
-_CFD_GNN    = pathlib.Path(__file__).resolve().parent
+_ELGIN_PKG  = pathlib.Path(__file__).resolve().parent
 
 # Default paths (overridable via CLI)
-_DEFAULT_OUT     = _ROOT / "datasets" / "cfd_gnn_single"
-_DEFAULT_MODEL   = _ROOT / "models"   / "cfd_gnn_single"
-_DEFAULT_RESULTS = _ROOT / "results"  / "cfd_gnn_single"
+_DEFAULT_OUT     = _ROOT / "experiments" / "elgin_case03" / "datasets"
+_DEFAULT_MODEL   = _ROOT / "experiments" / "elgin_case03" / "models"
+_DEFAULT_RESULTS = _ROOT / "experiments" / "elgin_case03" / "results"
 
 
 # ---------------------------------------------------------------------------
@@ -125,8 +118,8 @@ def stage_extract(args: argparse.Namespace, out_dir: pathlib.Path) -> pathlib.Pa
     if args.synthetic:
         # Generate synthetic data without OpenFOAM
         cmd = [
-            _PYTHON, str(_CFD_GNN / "data" / "extract_fields.py"),
-            "--case_dir", str(args.case_dir or _ROOT / "openfoam" / "Sweep_Case_01"),
+            _PYTHON, str(_ELGIN_PKG / "data" / "extract_fields.py"),
+            "--case_dir", str(args.case_dir or _ROOT / "openfoam" / "dentalRoom2D"),
             "--output",   str(npz_path),
             "--t_start",  str(args.t_start),
             "--t_end",    str(args.t_end),
@@ -137,7 +130,7 @@ def stage_extract(args: argparse.Namespace, out_dir: pathlib.Path) -> pathlib.Pa
             print("[ERROR] --case_dir is required (or pass --synthetic)")
             sys.exit(1)
         cmd = [
-            _PYTHON, str(_CFD_GNN / "data" / "extract_fields.py"),
+            _PYTHON, str(_ELGIN_PKG / "data" / "extract_fields.py"),
             "--case_dir", str(args.case_dir),
             "--output",   str(npz_path),
             "--t_start",  str(args.t_start),
@@ -165,7 +158,7 @@ def stage_mesh(args: argparse.Namespace, out_dir: pathlib.Path,
         return mesh_path
 
     cmd = [
-        _PYTHON, str(_CFD_GNN / "data" / "mesh_to_graph.py"),
+        _PYTHON, str(_ELGIN_PKG / "data" / "mesh_to_graph.py"),
         "--case_dir", str(case_dir),
         "--output",   str(mesh_path),
     ]
@@ -185,13 +178,14 @@ def stage_train(
     model_dir: pathlib.Path,
 ) -> None:
     # Distribute total epoch budget across the 4 training stages.
-    # New split: 10 / 50 / 10 / 30  (sums to 100 %).
-    #   Stage 1 (fluid pre-training) is kept short because the rollout uses
-    #   --freeze_fluid (GT fluid) — Stage 1 is mostly a warm-start.
-    #   Stage 2 (one-step particle MSE) is the workhorse.
-    #   Stage 3 (PDE-informed) is only useful with non-zero λ weights.
-    #   Stage 4 (BPTT rollout fine-tuning) is the standard fix for
-    #   autoregressive drift (Sanchez-Gonzalez et al. 2020).
+    # Paper Sec. IV split: 20 / 20 / 40 / 20  (60/60/120/60 at the
+    # recommended 300-epoch budget) — bulk of the budget goes to the
+    # PDE-informed Stage 3 and the BPTT rollout fine-tune Stage 4.
+    #   Stage 1 (fluid pre-training): Eulerian warm-start (paper Sec. IV.A).
+    #   Stage 2 (one-step particle MSE + noise aug): Lagrangian initialisation.
+    #   Stage 3 (PDE-informed joint): continuity / momentum / k-omega residuals.
+    #   Stage 4 (BPTT rollout fine-tuning): Sanchez-Gonzalez et al. (2020) fix
+    #           for autoregressive covariate shift.
     n = args.epochs
     start_stage = getattr(args, "start_stage", 1)
 
@@ -203,20 +197,11 @@ def stage_train(
         print(f"  [start_stage=4] Skipping Stages 1-3.  "
               f"Stage4={s4} epochs (resuming from best.pt)")
     else:
-        # Stage split optimised for single-case training:
-        #   Stage 1 (fluid warm-start) — short; rollout uses --freeze_fluid so
-        #           Eulerian quality matters less than Lagrangian accuracy.
-        #   Stage 2 (one-step particle MSE) — moderate; enough to initialise the
-        #           Lagrangian before BPTT.  With a single case it overfits quickly.
-        #   Stage 3 (PDE-informed) — short pass to activate physics constraints.
-        #   Stage 4 (BPTT rollout) — majority of the budget.  With
-        #           --freeze_fluid_stage4 this aligns training with inference
-        #           (--freeze_fluid at rollout) and directly minimises long-horizon
-        #           rollout error.
-        s1 = max(1, round(n * 0.10))
-        s2 = max(1, round(n * 0.25))
-        s3 = max(0, round(n * 0.10))
-        s4 = max(1, round(n * 0.55))
+        # Paper Sec. IV recipe: 20/20/40/20 (= 60/60/120/60 at n=300).
+        s1 = max(1, round(n * 0.20))
+        s2 = max(1, round(n * 0.20))
+        s3 = max(0, round(n * 0.40))
+        s4 = max(1, round(n * 0.20))
         print(f"  Epoch budget: Stage1={s1}  Stage2={s2}  Stage3={s3}  Stage4={s4}  "
               f"(total={s1+s2+s3+s4})")
 
@@ -229,7 +214,7 @@ def stage_train(
     env["PYTHONUNBUFFERED"] = "1"
 
     cmd = [
-        _PYTHON, "-u", str(_CFD_GNN / "train" / "train.py"),
+        _PYTHON, "-u", str(_ELGIN_PKG / "train" / "train.py"),
         "--data_dir",       str(data_dir),
         "--mesh",           str(mesh_path),
         "--model_dir",      str(model_dir),
@@ -243,26 +228,16 @@ def stage_train(
         "--stage2_epochs",  str(s2),
         "--stage3_epochs",  str(s3),
         "--stage4_epochs",  str(s4),
-        # Pass the frame-interval as the model dt so position integration and
-        # physics residuals use the correct time step. dt_keep (default 0.1 s)
-        # is the interval between consecutive dataset frames.
         "--dt",             str(args.dt_keep),
-        # PDE-residual weights for Stage 3.  mse_fluid is now computed in
-        # normalised space (in losses.py / dataset.py) so these are
-        # comparable to the supervised term.  Set to 0 to disable.
         "--lambda_mom",     str(args.lambda_mom),
         "--lambda_cont",    str(args.lambda_cont),
         "--lambda_turb",    str(args.lambda_turb),
-        # BPTT rollout fine-tuning (Stage 4)
         "--bptt_steps",         str(args.bptt_steps),
         "--bptt_weight",        str(args.bptt_weight),
         "--bptt_rollout_noise", str(args.bptt_rollout_noise),
-        # Lagrangian connectivity radius (default 0.10 m — see config.py)
         "--particle_radius", str(args.particle_radius),
     ]
 
-    # When starting directly from Stage 4, load the existing best.pt so the
-    # Lagrangian begins from the Stage-3-trained weights, not random init.
     if start_stage >= 4:
         best_ckpt = model_dir / "best.pt"
         if best_ckpt.exists():
@@ -272,24 +247,9 @@ def stage_train(
             print(f"  [WARNING] --start_stage 4 requested but no best.pt found in "
                   f"{model_dir}. Starting from random init.")
 
-    # Align Stage 4 BPTT training with --freeze_fluid inference:
-    # When rollout.py uses --freeze_fluid the Lagrangian sees GT fluid at every
-    # step.  Stage 4 BPTT must match this so the gradient signal is meaningful.
-    # Without this flag, BPTT trains the Lagrangian against a drifting
-    # autoregressive Eulerian that it never encounters at inference — wasting
-    # all Stage 4 epochs on the wrong distribution.
     if getattr(args, "freeze_fluid_stage4", False):
         cmd += ["--freeze_fluid_stage4"]
 
-    # Default model now keeps:
-    #   * LSTM history encoder    (--use_lstm,    on by default)
-    #   * Symplectic integrator   (--use_sv,      on by default)
-    #   * SE(2)-equivariant edges (--use_equivar, on by default)
-    #   * BPTT loss (Stage 4)     (--use_bptt,    on by default)
-    # Disable the still-experimental physics that need more data:
-    #   * Stochastic decoder, Saffman lift, Brownian, evaporation,
-    #     heterogeneous graph.
-    # Pass --full_model to also enable the experimental physics stack.
     if not args.full_model:
         cmd += [
             "--no_stoch",       # deterministic decoder
@@ -305,8 +265,6 @@ def stage_train(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, env=env
     )
-    # Write log incrementally so both the terminal and the log file update
-    # after every line — not just when training finishes.
     with open(log, "w", encoding="utf-8", errors="replace") as log_f:
         for line in proc.stdout:
             print(line, end="", flush=True)
@@ -341,10 +299,10 @@ def main() -> None:
                     help="End time for extraction window (s). Default 28.0.")
     ap.add_argument("--dt_keep",  type=float, default=0.1,
                     help="Sampling interval for extraction (s). Default 0.1.")
-    ap.add_argument("--n_particles", type=int, default=3000,
-                    help="Subsample to this many particles per timestep. "
-                         "Default 3000 balances accuracy and GPU memory. "
-                         "Reduce to 1000 for CPU or 4 GB GPU.")
+    ap.add_argument("--n_particles", type=int, default=1000,
+                    help="Subsample to this many parcels per timestep. "
+                         "Default 1000 (paper Sec. V.A 'evaluator' subset; "
+                         "4 GB GPU memory budget).")
 
     # ── Output directories ──────────────────────────────────────────────────
     ap.add_argument("--out_dir",   type=pathlib.Path, default=_DEFAULT_OUT,
@@ -353,25 +311,28 @@ def main() -> None:
                     help="Directory where model checkpoints are saved.")
 
     # ── Training ────────────────────────────────────────────────────────────
-    ap.add_argument("--epochs",      type=int,   default=100,
-                    help="Total epoch budget split across 4 training stages. "
-                         "Default 100 (≈30–60 min on GPU).")
+    ap.add_argument("--epochs",      type=int,   default=300,
+                    help="Total epoch budget split across 4 training stages "
+                         "as 20/20/40/20 %% (= 60/60/120/60 at the recommended "
+                         "default of 300 epochs; paper Table III).")
     ap.add_argument("--batch_size",  type=int,   default=2)
     ap.add_argument("--hidden_size", type=int,   default=64,
-                    help="Latent dimension for GNN layers. Default 64 for "
-                         "4 GB GPU. Use 128 on ≥8 GB GPU (--hidden_size 128).")
+                    help="Latent dimension d_h for GNN layers. Default 64 "
+                         "(paper Table III). Use 128 on >=8 GB GPU for higher "
+                         "capacity at the cost of memory.")
     ap.add_argument("--mp_steps",    type=int,   default=4,
-                    help="Message-passing steps per forward pass. Default 4 "
-                         "for 4 GB GPU. Use 8 on ≥8 GB GPU (--mp_steps 8).")
+                    help="Message-passing steps K_E and K_L per forward pass. "
+                         "Default 4 (paper Table III).")
     ap.add_argument("--noise_std",   type=float, default=3e-4)
     ap.add_argument("--device",      default="auto",
                     choices=["auto", "cuda", "cpu"])
     ap.add_argument("--full_model",  action="store_true",
-                    help="Also enable the still-experimental physics "
-                         "(stochastic decoder, Saffman lift, Brownian, "
-                         "evaporation, heterogeneous graph). LSTM, "
-                         "symplectic integration, equivariant edges and "
-                         "BPTT are on by default.")
+                    help="Also enable the optional physics stack that is "
+                         "switched OFF in the production single-case checkpoint "
+                         "(VAE-style stochastic decoder, Saffman lift, "
+                         "Brownian motion, evaporation, heterogeneous graph). "
+                         "LSTM, Stormer-Verlet integration, rotation-invariant "
+                         "edges and BPTT remain on by default.")
     # PDE residual weights for Stage 3
     ap.add_argument("--lambda_mom",  type=float, default=0.05,
                     help="Stage 3 momentum-residual weight. Default 0.05.")
@@ -380,8 +341,9 @@ def main() -> None:
     ap.add_argument("--lambda_turb", type=float, default=0.02,
                     help="Stage 3 turbulence-residual weight. Default 0.02.")
     # BPTT rollout fine-tuning (Stage 4)
-    ap.add_argument("--bptt_steps",  type=int,   default=10,
-                    help="Number of unrolled steps in the Stage 4 BPTT loss.")
+    ap.add_argument("--bptt_steps",  type=int,   default=5,
+                    help="Number of unrolled steps in the Stage 4 BPTT loss "
+                         "(paper Table III: 5).")
     ap.add_argument("--bptt_weight", type=float, default=0.5,
                     help="Weight of the BPTT rollout loss vs. the one-step "
                          "supervised loss in Stage 4.")
@@ -398,7 +360,7 @@ def main() -> None:
                     help="Freeze the Eulerian sub-network during Stage 4 BPTT "
                          "and feed the GT fluid field at every unrolled step. "
                          "REQUIRED when rollout.py is invoked with --freeze_fluid "
-                         "(the default in run_case03.ps1). Aligns training with "
+                         "(the default in scripts/run_training.ps1). Aligns training with "
                          "inference so Stage 4 BPTT directly minimises rollout "
                          "error under the same fluid regime seen at test time.")
     ap.add_argument("--start_stage", type=int, default=1, choices=[1, 2, 3, 4],
@@ -445,7 +407,6 @@ def main() -> None:
     args.model_dir.mkdir(parents=True, exist_ok=True)
     (_DEFAULT_RESULTS / "logs").mkdir(parents=True, exist_ok=True)
 
-    # Remove stale checkpoints so rollout.py never loads an old broken model
     if args.clean:
         import shutil
         for ckpt in args.model_dir.glob("*.pt"):
@@ -474,7 +435,7 @@ def main() -> None:
 
     # ------------------------------------------------------------------
     if not args.skip_train:
-        _hline("STEP 3  Train CFD-GNN")
+        _hline("STEP 3  Train ELGIN")
         stage_train(args, args.out_dir, mesh_path, args.model_dir)
     else:
         print("  [skip_train] Skipping training.")
@@ -487,10 +448,10 @@ def main() -> None:
     print(f"  Data  : {npz_path}")
     print()
     print("  To run rollout with the trained model:")
-    print(f"    python cfd_gnn/rollout.py \\")
+    print(f"    python elgin/rollout.py \\")
     print(f"        --model_dir {args.model_dir} \\")
-    print(f"        --n_steps 260 \\")
-    print(f"        --output  results/cfd_gnn_single/rollout")
+    print(f"        --n_steps 255 \\")
+    print(f"        --output  experiments/elgin_case03/results/rollouts")
     _hline()
 
 

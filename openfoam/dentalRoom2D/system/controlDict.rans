@@ -1,0 +1,64 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+|    =========                 |                                              |
+|    \\      /  F ield         | foam-extend: Open Source CFD                 |
+|     \\    /   O peration     | Version:     4.1                             |
+|      \\  /    A nd           | Web:         http://www.foam-extend.org      |
+|       \\/     M anipulation  |                                              |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "system";
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// PHASE 1: Steady-state carrier-phase RANS solve (simpleFoam).
+// Run until residuals drop below 1e-5 (typically 1000–3000 iterations).
+// The converged U, p, k, omega fields are the "frozen flow" that the
+// particle-tracking phase (Phase 2) uses as a fixed background.
+
+application     simpleFoam;
+
+startFrom       startTime;
+startTime       0;
+
+stopAt          endTime;
+endTime         3000;          // max iterations; residualControl will exit earlier
+
+deltaT          1;             // iteration counter (pseudo-time step)
+
+writeControl    timeStep;
+writeInterval   100;           // write field snapshots every 100 iterations
+                               // 100 < residualControl exit (typ. 200-600 iter)
+
+purgeWrite      2;             // keep only 2 most recent snapshots
+writeFormat     ascii;
+writePrecision  8;
+writeCompression off;
+
+timeFormat      general;
+timePrecision   6;
+
+runTimeModifiable yes;
+
+// -----------------------------------------------------------------------
+// Convergence monitor: residuals written to postProcessing/
+// -----------------------------------------------------------------------
+functions
+{
+    residuals
+    {
+        type            residuals;
+        functionObjectLibs ("libutilityFunctionObjects.so");
+        outputControl   timeStep;
+        outputInterval  50;
+        // U is a vector field — list components Ux/Uy individually.
+        // Listing "U" causes a fatal Scalar-read error in foam-extend 4.1.
+        fields          (Ux Uy p k omega);
+    }
+}
+
+// ************************************************************************* //

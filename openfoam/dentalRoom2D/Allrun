@@ -1,31 +1,132 @@
-#!/bin/sh
-# Run the 2D dental-room nanoparticle dispersion case end-to-end.
-# Source the foam-extend 4.1 environment before running, e.g.:
-#   source $FOAM_INST_DIR/foam-extend-4.1/etc/bashrc
+#!/bin/bash
+# =============================================================================
+# Allrun  -
+#
+# Two-phase pipeline (paper Section II):
+#
+#   PHASE 1 - simpleFoam
+#       Steady-state incompressible k-omega SST RANS.
+#       Provides converged U, p, k, omega (the "frozen carrier flow").
+#
+#   TRANSITION (scripts/init_reacting_fields.py)
+#       For the converged RANS time directory:
+#         * overwrites p with absolute pressure 101325 Pa
+#         * patches k, omega walls to compressible:: variants
+#         * writes T, mut, alphat, H2O, N2, G with compressible BCs
+#
+#   PHASE 2 - reactingParcelFoam
+#       Transient compressible Lagrangian parcel tracking.
+#       Wells' D^2-law evaporation via LiquidEvaporation submodel.
+#       Carrier species transport: Y_H2O released from droplets, Y_N2 inert.
+#
+# Prerequisite:
+#     source $FOAM_INST_DIR/foam-extend-4.1/etc/bashrc
+# =============================================================================
 
-cd "${0%/*}" || exit 1
-. "${WM_PROJECT_DIR:?WM_PROJECT_DIR not set -- source foam-extend 4.1 first}/bin/tools/RunFunctions"
+set -e
+set -o pipefail
+# Resolve the script's directory robustly.  Using dirname (vs the
+# foam-extend idiom `cd "${0%/*}"`) handles all three invocation styles:
+#   ./Allrun                   -> dirname "." 
+#   bash Allrun                -> dirname "." 
+#   bash /full/path/Allrun     -> dirname "/full/path"
+cd "$(dirname "$0")" || exit 1
 
-# ----------------------------------------------------------------------------
-# 1. Mesh
-# ----------------------------------------------------------------------------
-runApplication blockMesh
-runApplication checkMesh
+# Helper: copy phase-specific system dictionaries into the canonical names
+# that the OpenFOAM runtime reads (system/controlDict, fvSchemes, fvSolution).
+phase_dictionaries()
+{
+    local suffix="$1"     # 'rans' or 'lagrangian'
+    cp -f system/controlDict.${suffix} system/controlDict
+    cp -f system/fvSchemes.${suffix}   system/fvSchemes
+    cp -f system/fvSolution.${suffix}  system/fvSolution
+    echo "    -> activated system/* for phase '${suffix}'"
+}
 
-# ----------------------------------------------------------------------------
-# 2. Transient flow + one-way coupled Lagrangian cloud
-#    uncoupledKinematicParcelFoam solves U/p/k/omega/nut with PIMPLE and
-#    tracks parcels alongside, without feedback from particles to the fluid.
-# ----------------------------------------------------------------------------
-runApplication $(getApplication)
+# =============================================================================
+# 0. Restore initial conditions and activate Phase-1 system dictionaries
+#     (blockMesh/checkMesh need a controlDict too, so activate the RANS
+#      dictionaries BEFORE meshing.)
+# =============================================================================
+echo ">>> [0] Copying 0.orig -> 0"
+[ -d 0 ] && rm -rf 0
+cp -r 0.orig 0
 
-# ----------------------------------------------------------------------------
-# 3. Post-process to VTK for downstream ML pipeline
-# ----------------------------------------------------------------------------
-runApplication foamToVTK -latestTime
-runApplication -s lagrangian foamToVTK -latestTime -lagrangianFields '(U d active origId)'
+phase_dictionaries rans
+
+# =============================================================================
+# 1. Mesh generation
+# =============================================================================
+echo ">>> [1] blockMesh"
+blockMesh 2>&1 | tee log.blockMesh
+
+echo ">>> [1] checkMesh"
+checkMesh 2>&1 | tee log.checkMesh
+if grep -q "FAILED" log.checkMesh; then
+    echo "ERROR: checkMesh failures detected.  Inspect log.checkMesh."
+    exit 1
+fi
+
+# =============================================================================
+# 2. PHASE 1 - simpleFoam (steady-state incompressible RANS)
+# =============================================================================
+echo ">>> [2] PHASE 1: simpleFoam (k-omega SST)"
+
+simpleFoam 2>&1 | tee log.simpleFoam
+
+# Identify the latest RANS time directory (numeric, > 0).
+# Some foam-extend 4.1 installs do not ship 'foamListTimes', so we use a
+# pure-shell scan that works in every environment.
+LAST_TIME=$(ls -1d [0-9]*/ 2>/dev/null | sed 's:/$::' | \
+            awk 'BEGIN{m=-1;n=""} {v=$1+0; if(v>m && v>0){m=v;n=$1}} END{print n}')
+if [ -z "$LAST_TIME" ]; then
+    echo "ERROR: No RANS output time directory found after simpleFoam."
+    echo "       Inspect log.simpleFoam to see why simpleFoam exited early."
+    exit 1
+fi
+echo "    RANS latest written time: $LAST_TIME"
+
+# =============================================================================
+# 3. Field transition (incompressible -> compressible)
+# =============================================================================
+echo ">>> [3] Field transition: writing compressible fields into ${LAST_TIME}/"
+python3 scripts/init_reacting_fields.py . "$LAST_TIME"
+
+# =============================================================================
+# 4. PHASE 2 - reactingParcelFoam (Lagrangian parcels + D^2 evaporation)
+# =============================================================================
+echo ">>> [4] PHASE 2: reactingParcelFoam (30 s)"
+phase_dictionaries lagrangian
+
+reactingParcelFoam 2>&1 | tee log.reactingParcel
+
+# =============================================================================
+# 5. VTK conversion (ParaView / PyVista / GNN ingest)
+# =============================================================================
+echo ">>> [5] foamToVTK"
+foamToVTK 2>&1 | tee log.foamToVTK
+
+# =============================================================================
+# 6. Breathing-Zone Exposure post-processing
+# =============================================================================
+echo ">>> [6] BZE post-processing"
+if command -v python3 >/dev/null 2>&1; then
+    python3 -c "import numpy" 2>/dev/null || \
+        python3 -m pip install --quiet numpy 2>/dev/null || \
+        echo "WARNING: numpy unavailable. Install with: pip3 install numpy"
+    python3 scripts/compute_bze.py . 2>&1 | tee log.bze
+else
+    echo "WARNING: python3 not found.  Run scripts/compute_bze.py manually."
+fi
 
 echo ""
-echo "Case complete."
-echo "  Eulerian fields:  VTK/"
-echo "  Parcel tracks:    VTK/lagrangian/kinematicCloud/"
+echo "======================================================================"
+echo "  Allrun complete"
+echo "======================================================================"
+echo "  Phase 1 RANS log:        log.simpleFoam"
+echo "  Phase 2 reacting log:    log.reactingParcel"
+echo "  Evaporated H2O field:    <time>/H2O"
+echo "  Parcel trajectories:     <time>/lagrangian/reactingCloud1/"
+echo "  VTK files:               VTK/"
+echo "  BZE time series:         postProcessing/bze.csv"
+echo "======================================================================"

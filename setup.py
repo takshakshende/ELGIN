@@ -6,12 +6,16 @@ setup(
     author="Dr Takshak Shende",
     author_email="takshak.shende@gmail.com",
     description=(
-        "ELGIN: Eulerian-Lagrangian Graph Interaction Network — "
+        "ELGIN: Eulerian-Lagrangian Graph Interaction Network -- "
         "a physics-informed GNN surrogate for particle-laden turbulent flow simulation"
     ),
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/TakshakShende/ELGIN",
+    project_urls={
+        "Source": "https://github.com/TakshakShende/ELGIN",
+        "Paper":  "https://github.com/TakshakShende/ELGIN",
+    },
     packages=find_packages(),
     python_requires=">=3.9",
     install_requires=[

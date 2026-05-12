@@ -1,41 +1,4 @@
 ﻿"""PressureProjection — enforce div(U) = 0 after Eulerian GNN prediction.
-
-This module implements the graph-based pressure-projection (Chorin, 1968)
-that corrects a raw GNN velocity prediction to be divergence-free.
-
-Mathematical basis
-------------------
-Given a raw (non-divergence-free) velocity field U_hat predicted by the GNN:
-
-  Step 1 — Compute divergence at each cell:
-      D_i = (1/V_i) sum_{j in N(i)} (U_i + U_j)/2 . n_ij . A_ij
-
-  Step 2 — Solve the pressure Poisson equation:
-      L phi = D       (graph Laplacian system)
-
-      L_ii = sum_{j in N(i)} A_ij / |Dx_ij|
-      L_ij = -A_ij / |Dx_ij|  (for face between i and j)
-
-  Step 3 — Apply pressure correction:
-      U_i = U_hat_i - (1/V_i) sum_{j in N(i)} phi_j . n_ij . A_ij
-
-Improvement #11 — Jacobi preconditioner + convergence logging
---------------------------------------------------------------
-The bare CG solver converges slowly for ill-conditioned graph Laplacians
-(e.g. near singularities at coarse-mesh boundaries).  A Jacobi (diagonal)
-preconditioner transforms the system to M^{-1} L phi = M^{-1} b, where
-M = diag(L).  This reduces the effective condition number and halves the
-iteration count for typical aerosol room-flow meshes.
-
-Additionally, the solver now returns the per-iteration residual norm in
-'cg_residuals' for convergence monitoring via TensorBoard or W&B.
-
-Activated by cfg.use_jacobi_precond = True  (default True).
-
-References
-----------
-- Barrett et al. (1994), Templates for the Solution of Linear Systems
-- Shewchuk (1994), An Introduction to the CG Method Without the Agonizing Pain
 """
 
 from __future__ import annotations

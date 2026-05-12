@@ -1,9 +1,9 @@
 /*--------------------------------*- C++ -*----------------------------------*\
-|    =========                 |                                              |
-|    \\      /  F ield         | foam-extend: Open Source CFD                 |
-|     \\    /   O peration     | Version:     4.1                             |
-|      \\  /    A nd           | Web:         http://www.foam-extend.org      |
-|       \\/     M anipulation  |                                              |
+| =========                 |                                                 |
+| \\      /  F ield         | foam-extend: Open Source CFD                    |
+|  \\    /   O peration     | Version:     4.1                                |
+|   \\  /    A nd           | Web:         http://www.foam-extend.org         |
+|    \\/     M anipulation  |                                                 |
 \*---------------------------------------------------------------------------*/
 FoamFile
 {
@@ -15,16 +15,26 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// foam-extend 4.1 old-style format:
-//   thermoType  <single primitive string>;
-//   mixture     <name> <nMoles> <molWeight> <Cp> <Hf> <mu> <Pr>;
-//
-// Token order for pureMixture<constTransport<specieThermo<hConstThermo<perfectGas>>>>:
-//   name   nMoles  molWeight   Cp     Hf     mu        Pr
-//   air    1       28.9        1007   0      1.8e-05   0.713
 
-thermoType  hPsiThermo<pureMixture<constTransport<specieThermo<hConstThermo<perfectGas>>>>>;
+thermoType      hsPsiMixtureThermo<reactingMixture<gasThermoPhysics>>;
 
-mixture     air  1  28.9  1007  0  1.8e-05  0.713;
+chemistryReader foamChemistryReader;
+
+foamChemistryFile       "$FOAM_CASE/chemkin/foam.inp";
+
+foamChemistryThermoFile "$FOAM_CASE/chemkin/foam.dat";
+
+liquidComponents
+(
+    H2O
+);
+
+solidComponents
+();
+
+inertSpecie     N2;
+
+H2O             H2O defaultCoeffs;
+
 
 // ************************************************************************* //

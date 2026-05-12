@@ -1,24 +1,5 @@
-﻿"""train.py — Four-stage training pipeline for the CFD-GNN.
+﻿"""train.py — Four-stage training pipeline for ELGIN.
 
-Round-2 additions
-------------------
-S2  d_p0 passed through to model.step() for evaporation tracking.
-
-S3  KL loss from stochastic decoder is retrieved from
-    model.lagrangian_gnn._last_kl and added to total_loss().
-
-S4  Differentiable multi-step rollout loss (BPTT).
-    Stage 4 now unrolls cfg.bptt_rollout_steps forward passes with
-    torch.enable_grad() and backpropagates through all steps.  This is
-    the training scheme used by Sanchez-Gonzalez et al. (2020) which is
-    essential for long-horizon rollout stability.
-
-    The Stage-4 loss is a weighted average:
-        L = (1 - w) * L_one_step  +  w * L_bptt_rollout
-    where w = cfg.bptt_loss_weight (default 0.5).
-
-    Gradient checkpointing (torch.utils.checkpoint) is used every 5 steps
-    to keep GPU memory bounded during long unrolls.
 """
 
 from __future__ import annotations
@@ -486,7 +467,7 @@ def train(args: argparse.Namespace) -> None:
                   and torch.cuda.is_available()
         else "cpu"
     )
-    print(f"[CFD-GNN train]  device={device}")
+    print(f"[ELGIN train]  device={device}")
 
     data_dir  = pathlib.Path(args.data_dir)
     npz_files = sorted(data_dir.glob("case_*.npz"))
@@ -613,23 +594,7 @@ def train(args: argparse.Namespace) -> None:
                    cg_iters, noise, use_bptt=False,
                    use_gt_fluid_in_bptt=False):
         nonlocal best_val
-        # Bypass the Eulerian GNN whenever this stage uses GT fluid as input to
-        # the Lagrangian:
-        #   • Stage 2 (freeze_fluid=True): Eulerian is frozen and its output
-        #     is garbage (mse_fluid ~ 17M for dental-room k/omega).  The
-        #     Lagrangian should see GT fluid directly — exactly what
-        #     rollout.py --freeze_fluid does at inference.
-        #   • Stage 4 BPTT with GT fluid (use_gt_fluid_in_bptt=True): same
-        #     reasoning; bypass ensures BPTT gradient matches inference.
-        #   • Stage 1 / Stage 3 (freeze_fluid=False, use_gt_fluid_in_bptt=False):
-        #     Eulerian runs normally (PDE losses need its output).
         bypass_eulerian = freeze_fluid or use_gt_fluid_in_bptt
-        # PDE losses are only meaningful when the Eulerian GNN generates the
-        # fluid prediction.  When bypass_eulerian=True the fluid output is the
-        # GT input (a constant w.r.t. model parameters), so PDE gradients are
-        # exactly zero yet dominate the total loss value by ~10^9×, which
-        # miscalibrates AdamW's second-moment estimates and makes the BPTT
-        # signal (the only real gradient) effectively invisible.
         effective_pde = compute_pde and not bypass_eulerian
         print(f"\n{'='*60}\n  {name}  (epochs={n_epochs}, lr={lr:.2e}, "
               f"pde={effective_pde}, bptt={use_bptt}, "
@@ -637,13 +602,6 @@ def train(args: argparse.Namespace) -> None:
         _freeze_fluid(model, freeze_fluid)
         model.pressure_proj.set_cg_iters(cg_iters)
 
-        # When the fluid network is frozen the total-loss is dominated by the
-        # (constant) mse_fluid term and does not reflect particle learning.
-        # Track mse_particle directly so the best checkpoint actually captures
-        # the best-trained particle model.  In Stage 4, however, mse_particle
-        # is typically saturated (~0) because the one-step Lagrangian was
-        # already fit in Stage 2/3, so prefer the rollout BPTT loss as the
-        # tracking metric whenever it is active.
         if use_bptt:
             best_metric_key = "bptt"
         elif freeze_fluid:
@@ -738,13 +696,6 @@ def train(args: argparse.Namespace) -> None:
         _load_best()   # <-- restore best before Stage 4
 
     if args.stage4_epochs > 0:
-        # S4: BPTT rollout loss active in Stage 4.
-        # When --freeze_fluid_stage4 is passed, the Eulerian sub-network is
-        # frozen AND the GT fluid trajectory is fed to the Lagrangian at
-        # every BPTT step (the same regime as `rollout.py --freeze_fluid`
-        # at inference).  This focuses the optimiser entirely on the
-        # Lagrangian rollout, and ensures training and inference see the
-        # SAME fluid distribution at every step of the unroll.
         _run_stage("Stage 4 (rollout)", args.stage4_epochs, cfg.stage4_lr,
                    bool(args.freeze_fluid_stage4), True,
                    cfg.pressure_cg_iters_stage4,
@@ -756,7 +707,7 @@ def train(args: argparse.Namespace) -> None:
     (model_dir / "training_history.json").write_text(
         _json.dumps(history, indent=2, default=str)
     )
-    print(f"\n[CFD-GNN train] Done.  Best val_total={best_val:.5f}")
+    print(f"\n[ELGIN train] Done.  Best val_total={best_val:.5f}")
     print(f"  Checkpoints: {model_dir}")
 
 
@@ -769,13 +720,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data_dir",    required=True)
     p.add_argument("--mesh",        required=True)
-    p.add_argument("--model_dir",   default="models/cfd_gnn")
+    p.add_argument("--model_dir",   default="experiments/elgin_case03/models")
     p.add_argument("--device",      default="auto")
     p.add_argument("--seed",        type=int,   default=42)
     p.add_argument("--batch_size",  type=int,   default=4)
     p.add_argument("--history_len", type=int,   default=5)
-    p.add_argument("--hidden_size", type=int,   default=128)
-    p.add_argument("--mp_steps",    type=int,   default=8)
+    p.add_argument("--hidden_size", type=int,   default=64)
+    p.add_argument("--mp_steps",    type=int,   default=4)
     p.add_argument("--dt",          type=float, default=0.01)
     p.add_argument("--noise_std",   type=float, default=3e-4)
     p.add_argument("--particle_radius", type=float, default=None,

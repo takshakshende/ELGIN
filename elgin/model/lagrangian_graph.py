@@ -1,27 +1,4 @@
 ﻿"""LagrangianGNN — particle transport GNN.
-
-Improvements (Round 1 + Round 2)
-----------------------------------
-#1  Bug fix   : velocity from pos-diff not raw pos
-#2  LSTM      : recurrent temporal encoder
-#3  Stormer-V : symplectic integrator
-#7  log(d_p)  : explicit size feature
-
-S1  SE(2) equivariance  — edge features expressed in edge-local frames
-S2  Evaporation         — Wells' d^2-law: d_p(t) shrinks as droplet evaporates
-S3  Stochastic decoder  — probabilistic acceleration head with KL loss
-S6  Saffman lift        — shear-induced lift force node feature
-S9  Heterogeneous graph — fine/coarse particle embeddings
-S11 Brownian motion     — Einstein-Smoluchowski kick for sub-micron particles
-
-Physics basis
--------------
-Maxey-Riley simplified:
-    dv/dt = F_drag/m + F_lift/m + F_grav/m + F_Brownian/m + F_turb/m
-    F_drag     = m*(u_fluid - v) / (tau_p/Cc)          [Stokes + Cunningham]
-    F_lift     = C_L * |du/dy|^0.5 * |u-v| * lift_dir  [Saffman 1965]
-    F_Brownian ~ N(0, 2*D_B/dt)                         [Einstein 1905]
-    F_turb     ~ N(0, 2k/3)                             [DRW / Pope 2000]
 """
 
 from __future__ import annotations
@@ -65,11 +42,6 @@ def _radius_graph(pos: torch.Tensor, r: float,
                   max_neighbors: int = 32,
                   chunk_size: int = 512) -> torch.Tensor:
     """Build radius graph without materialising the full N×N distance matrix.
-
-    Processes rows in chunks of `chunk_size` to keep peak memory at
-    O(chunk_size × N) rather than O(N²). With chunk_size=512 and N=3000
-    the peak extra allocation is 512 × 3000 × 4 ≈ 6 MB instead of 36 MB,
-    and the benefit is larger for N ≥ 10 000.
     """
     N = pos.shape[0]
     k = min(max_neighbors, N - 1)
@@ -106,22 +78,6 @@ def _edge_local_frame(pos_i: torch.Tensor,
                       r:     float
                       ) -> torch.Tensor:
     """Project relative position into an edge-aligned local frame.
-
-    For edge (i -> j) we define:
-        t_hat = (x_j - x_i) / ||x_j - x_i||          (tangent)
-        n_hat = rotate(t_hat, +90°) = (-t_y, t_x)     (normal, 2-D)
-
-    The local-frame features:
-        [d_t/r, d_n/r, ||delta||/r]
-
-    are invariant to rigid translations and equivariant to 2-D rotations:
-    rotating the room merely rotates the frame along with the coordinates,
-    so the feature values are unchanged.
-
-    References
-    ----------
-    - Sharma & Fink (2025) Dynami-CAL GraphNet: edge-local reference frames
-    - Villar et al. (2021) Scalable and equivariant spherical CNNs
     """
     delta = pos_j - pos_i                              # (E, 2)
     dist  = delta.norm(dim=-1, keepdim=True).clamp(min=1e-8)
@@ -157,20 +113,6 @@ class LSTMTemporalEncoder(nn.Module):
 
 class StochasticDecoder(nn.Module):
     """Probabilistic acceleration head.
-
-    Outputs a mean mu and log-variance log_sigma^2 over acceleration.
-    During training, samples a = mu + sigma * eps, eps ~ N(0,I).
-    During eval, returns the mean (deterministic).
-
-    The reparameterisation trick keeps the gradient flowing through mu and
-    sigma, and the KL loss KL(N(mu,sigma)||N(0,1)) is returned alongside
-    the sample for use in the training loss.
-
-    References
-    ----------
-    - Kingma & Welling (2014) VAE
-    - Lino et al. (2025) Diffusion Graph Networks
-    - Pope (2000) Turbulent Flows — stochastic Lagrangian dispersion
     """
 
     def __init__(self, hidden: int, dim: int, layers: int):
@@ -399,22 +341,22 @@ class LagrangianGNN(nn.Module):
             norm_drag = a_drag * (self.cfg.dt ** 2) / self.acc_std.clamp(min=1e-8)
             parts.append(norm_drag)
 
-        # S2: evaporation ratio d_p/d_p0  (1 = un-evaporated, 0.5 = nucleus)
+        #  evaporation ratio d_p/d_p0  (1 = un-evaporated, 0.5 = nucleus)
         if self.use_evap:
             evap_ratio = (d_p / d_p0.clamp(min=1e-12)).clamp(0.0, 1.0)
             parts.append(evap_ratio.unsqueeze(-1))
 
-        # #7: log(d_p) scaled
+        # log(d_p) scaled
         if self.use_log_dp:
             log_dp_norm = (d_p.clamp(min=1e-9).log() + 13.5) / 4.5
             parts.append(log_dp_norm.unsqueeze(-1))
 
-        # #4: TKE turbulent dispersion intensity
+        #  TKE turbulent dispersion intensity
         if self.use_tke and k_fluid is not None:
             tke_feat = (k_fluid.clamp(min=0.0).sqrt() / cfg.U_ref).unsqueeze(-1)
             parts.append(tke_feat)
 
-        # S6: Saffman lift vector — also needs physical velocity
+        # Saffman lift vector — also needs physical velocity
         if self.use_saffman:
             v_p_ms = v_p / (self.cfg.dt + 1e-12)
             a_lift  = saffman_lift_acc(v_p_ms, u_fluid, d_p, rho_p, du_dy,
@@ -422,7 +364,7 @@ class LagrangianGNN(nn.Module):
             norm_lift = a_lift * (self.cfg.dt ** 2) / self.acc_std.clamp(min=1e-8)
             parts.append(norm_lift)
 
-        # S9: size-class signal (continuous fine-ness indicator)
+        #  size-class signal (continuous fine-ness indicator)
         if self.use_hetero:
             fine_frac = (1.0 - (d_p / cfg.fine_particle_threshold)
                          .clamp(0.0, 1.0)).unsqueeze(-1)  # 1=fine, 0=coarse
@@ -455,7 +397,7 @@ class LagrangianGNN(nn.Module):
         src, dst = edge_index
         r        = self.cfg.particle_radius
 
-        # S1: SE(2) equivariant local-frame features
+        #  SE(2) equivariant local-frame features
         if self.use_equivar:
             geom = _edge_local_frame(pos[src], pos[dst], r)   # (E, 3)
         else:
@@ -542,13 +484,6 @@ class LagrangianGNN(nn.Module):
         wall_feat_p: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Predict next position with full physics stack.
-
-        Pipeline:
-            1. GNN predicts residual acceleration
-            2. Add gravity
-            3. S3: add stochastic TKE dispersion kick
-            4. S11: add Brownian motion for sub-micron particles
-            5. Integrate via Stormer-Verlet (Round-1 #3) or Euler
         """
         norm_acc  = self.predict_acceleration(
             pos_hist, ptype, u_fluid, d_p, d_p0, rho_p, k_fluid, du_dy,
@@ -595,10 +530,7 @@ class LagrangianGNN(nn.Module):
             sub_micron = (d_p < 1e-6).float().unsqueeze(-1)
             next_pos   = next_pos + sub_micron * brownian
 
-        # Wall reflection — prevents particle pile-up at domain boundaries.
-        # Reflecting the overshoot (rather than clamping) reverses the implied
-        # velocity so the model's LSTM history encodes inward motion next step,
-        # pulling the particle back into the domain naturally.
+
         bounds = torch.tensor(self.cfg.domain_bounds,
                               dtype=next_pos.dtype,
                               device=next_pos.device)   # (dim, 2)

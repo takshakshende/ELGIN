@@ -1,19 +1,4 @@
-﻿"""CfdGNNDataset — PyTorch dataset for the full CFD-GNN framework.
-
-Each sample is a one-step prediction target:
-  Input:  field state at time t  [U, p, k, ω]  +  particle history [x_{t-H:t}]
-  Target: field state at time t+1 + particle position at t+1
-
-This revision honours the per-parcel ``particle_alive_mask`` written by
-``extract_fields.py`` so we never train on:
-  - parcels that have not yet been injected (positions are NaN/zero), or
-  - parcels that have already evaporated / left the domain.
-
-For each ``(case_idx, time_idx)`` we precompute the list of parcels that are
-alive in *every* frame of the (history + target) window
-``[t - history_len, t + 1]``.  ``__getitem__`` then deterministically samples
-``n_particles`` of those alive parcels per call so batches can be stacked.
-Frames with fewer than ``n_particles`` alive parcels are simply not indexed.
+﻿"""CfdGNNDataset — PyTorch dataset for the full ELGIN framework.
 """
 
 from __future__ import annotations
@@ -72,7 +57,7 @@ def _resolve_alive_mask(data: np.ndarray | dict,
 # ---------------------------------------------------------------------------
 
 class CfdGNNDataset(Dataset):
-    """Dataset for training the full CFD-GNN.
+    """Dataset for training the full ELGIN model.
 
     Args:
         npz_files:    List of .npz files from extract_fields.py.

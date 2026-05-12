@@ -29,9 +29,9 @@ BC type encoding:
 
 Usage
 -----
-    python cfd_gnn/data/mesh_to_graph.py \\
-        --case_dir  openfoam/Case01 \\
-        --output    datasets/cfd_gnn/mesh_graph.npz
+    python elgin/data/mesh_to_graph.py \\
+        --case_dir  openfoam/dentalRoom2D \\
+        --output    experiments/elgin_case03/datasets/mesh_graph.npz
 """
 
 from __future__ import annotations
@@ -201,7 +201,7 @@ _TYPE_MAP = {
 
 
 def classify_patch(name: str, ftype: str | None) -> int:
-    """Map an OpenFOAM (patchName, patchType) to a CFD-GNN BC integer."""
+    """Map an OpenFOAM (patchName, patchType) to an ELGIN BC integer."""
     n = name.lower()
     for kw, bc_id in _NAME_RULES:
         if kw in n:
@@ -342,9 +342,7 @@ def build_mesh_graph(case_dir: pathlib.Path) -> dict:
         for fi in range(start_face, start_face + n_patch_faces):
             if fi >= len(owner):
                 continue
-            # Don't downgrade a more specific BC label (later patch shouldn't
-            # overwrite an earlier one — first wins).  This matters for cells
-            # that sit on the corner of two named patches.
+
             if bc_type[owner[fi]] == 0:
                 bc_type[owner[fi]] = bc_id
 

@@ -1,36 +1,5 @@
-﻿"""PDE residual loss functions for the CFD-GNN framework.
+﻿"""PDE residual loss functions for the ELGIN framework.
 
-Loss terms:
-  L_total = L_MSE + lambda_cont*L_cont + lambda_mom*L_mom
-          + lambda_turb*L_turb + lambda_part*L_part + lambda_ang*L_ang
-          + lambda_kl*L_KL
-
-L_MSE    — supervised one-step field prediction error
-L_cont   — continuity residual   ||div(U)||^2  (incompressibility)
-L_mom    — momentum equation residual          (RANS)
-L_turb   — turbulence equation residual        (k-omega equations)
-L_part   — particle position MSE
-L_ang    — angular momentum conservation       (Improvement #10)
-
-Improvement #10 — Angular Momentum Conservation Loss
------------------------------------------------------
-For a collection of N particles the angular momentum about the domain centroid
-is:
-    L_z = sum_i (r_i x m_i * v_i)
-        = sum_i rho_p * (pi/6) * d_p^3 * (x_i * vy_i - y_i * vx_i)   [2D]
-
-We enforce conservation across a rollout step:
-    L_ang = (L_z(pred) - L_z(target))^2
-
-This loss acts as a soft global symmetry constraint that:
-  (a) prevents artificial drift in the collective particle cloud
-  (b) encourages the network to produce physically consistent torques
-
-References
-----------
-- Noether (1918) conservation laws and symmetry
-- Sharma & Fink (2025), Dynami-CAL GraphNet — angular momentum loss
-- Breen et al. (2020) angular momentum conservation in N-body GNNs
 """
 
 from __future__ import annotations

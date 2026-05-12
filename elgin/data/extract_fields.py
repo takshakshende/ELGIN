@@ -1,26 +1,11 @@
 ﻿"""extract_fields.py — Extract Eulerian fluid fields *and* Lagrangian parcel
 trajectories (with proper per-parcel ID tracking) from an OpenFOAM case.
 
-Compared with the original revision this version:
-
-  * Reads parcel ``origId`` from the VTK file (or from the ASCII
-    ``<time>/lagrangian/<cloud>/origId`` when VTK is unavailable) and
-    assembles a **full-timeline union table** indexed by parcel ID.  At each
-    frame, ``particle_pos[t, i, :]`` is therefore the position of the *same
-    physical parcel* across time — not a permutation-noisy snapshot of the
-    VTK array order.
-  * Saves ``particle_alive_mask (T, N)`` and ``orig_ids (N,)`` so downstream
-    code can skip frames where a parcel has not yet been injected or has
-    already evaporated/escaped.
-  * Keeps the same ``particle_pos / particle_diam / particle_dens`` keys
-    expected by the dataset / rollout / animation code.  Positions for
-    non-alive frames are filled with NaN.
-
 Usage
 -----
-    python cfd_gnn/data/extract_fields.py \\
-        --case_dir openfoam/Sweep_Case_03 \\
-        --output   datasets/cfd_gnn/case_03.npz \\
+    python elgin/data/extract_fields.py \\
+        --case_dir openfoam/dentalRoom2D \\
+        --output   experiments/elgin_case03/datasets/case_single.npz \\
         --t_start  2.0 \\
         --t_end    28.0 \\
         --dt_keep  0.1
@@ -345,9 +330,7 @@ def _read_lagrangian_direct(case_dir: pathlib.Path,
     directory has no Lagrangian data.
 
     The OpenFOAM time directory name can be formatted in several ways
-    (e.g. ``2.1``, ``2.10``, ``2.10000``).  We first try the obvious string
-    formattings and then fall back to a tolerance-matched scan over all
-    numeric subdirectories.
+    (e.g. ``2.1``, ``2.10``, ``2.10000``). 
     """
     candidates = [f"{t:g}", f"{t:.1f}", f"{t:.2f}", f"{t:.3f}", f"{t:.4f}"]
     t_dir: Optional[pathlib.Path] = None

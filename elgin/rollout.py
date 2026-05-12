@@ -1,29 +1,23 @@
-﻿"""rollout.py — Run a full CFD-GNN simulation (no OpenFOAM required).
+﻿"""rollout.py — Run a full ELGIN simulation (no OpenFOAM required).
 
-This script loads a trained CfdGNN checkpoint and runs it forward for
-n_steps timesteps, producing:
-  - Fluid field evolution:  (T, N_cells, 5)  [U_x, U_y, p, k, ω]
-  - Particle trajectories:  (T, N_part, dim)
-  - Clinical metrics:       breathing-zone exposure, deposition fractions
-  - Animations / plots
 
 Usage examples
 --------------
   # Use a real CFD initial condition
-  python cfd_gnn/rollout.py \\
-      --model_dir models/cfd_gnn \\
-      --ic_file   datasets/cfd_gnn/case_00.npz \\
-      --mesh      datasets/cfd_gnn/mesh_graph.npz \\
-      --n_steps   300 \\
-      --output    predictions/run_01
+  python elgin/rollout.py \\
+      --model_dir experiments/elgin_case03/models \\
+      --ic_file   experiments/elgin_case03/datasets/case_single.npz \\
+      --mesh      experiments/elgin_case03/datasets/mesh_graph.npz \\
+      --n_steps   255 \\
+      --output    experiments/elgin_case03/results/rollouts
 
   # Use a synthetic initial condition (test without data)
-  python cfd_gnn/rollout.py \\
-      --model_dir models/cfd_gnn \\
-      --mesh      datasets/cfd_gnn/mesh_graph.npz \\
+  python elgin/rollout.py \\
+      --model_dir experiments/elgin_case03/models \\
+      --mesh      experiments/elgin_case03/datasets/mesh_graph.npz \\
       --synthetic \\
       --n_particles 300 \\
-      --u_inlet 0.5 \\
+      --u_inlet 0.10 \\
       --output  predictions/synthetic_run
 """
 
@@ -319,7 +313,7 @@ def compute_clinical_metrics(
 #  Visualisation
 # ---------------------------------------------------------------------------
 
-def plot_fluid_field(fluid_field, cell_pos, title="CFD-GNN Fluid Field",
+def plot_fluid_field(fluid_field, cell_pos, title="ELGIN Fluid Field",
                      savepath=None):
     try:
         import matplotlib.pyplot as plt
@@ -381,7 +375,7 @@ def run_rollout(args: argparse.Namespace) -> None:
         "cuda" if args.device in ("auto", "cuda") and torch.cuda.is_available()
         else "cpu"
     )
-    print(f"[CFD-GNN rollout]  device={device}")
+    print(f"[ELGIN rollout]  device={device}")
 
     # ── Load model ──────────────────────────────────────────────────────────
     model_dir = pathlib.Path(args.model_dir)
@@ -434,11 +428,6 @@ def run_rollout(args: argparse.Namespace) -> None:
     print(f"  n_particles={N_part}, n_steps={args.n_steps}")
 
     # ── Wall-distance feature for the fluid GNN ──────────────────────────────
-    # Prefer the polyMesh-based d_wall stored in mesh_graph.npz (this
-    # accounts for the dentist / patient obstacles).  Fall back to the
-    # extractor's per-case d_wall if the mesh doesn't carry one (older
-    # mesh_graph.npz), and finally to the crude y-coordinate only when no
-    # IC file is available (synthetic mode).
     if "d_wall" in mesh:
         d_wall = mesh["d_wall"]
     elif d_wall_np is not None:
@@ -713,7 +702,7 @@ def run_rollout(args: argparse.Namespace) -> None:
     if not args.no_plots:
         plot_fluid_field(
             result["fluid_traj"][-1], mesh["cell_pos"].cpu(),
-            title=f"CFD-GNN Fluid Field at t={args.n_steps*cfg.dt:.1f}s",
+            title=f"ELGIN Fluid Field at t={args.n_steps*cfg.dt:.1f}s",
             savepath=str(out_dir / "fluid_field_final.png")
         )
         plot_particle_traj(
@@ -751,7 +740,7 @@ def main():
     parser.add_argument("--n_steps",     type=int, default=200)
     parser.add_argument("--u_inlet",     type=float, default=0.3,
                         help="Inlet velocity magnitude [m/s].")
-    parser.add_argument("--output",      type=str, default="predictions/cfd_gnn_run")
+    parser.add_argument("--output",      type=str, default="predictions/elgin_run")
     parser.add_argument("--device",      type=str, default="auto")
     parser.add_argument("--freeze_fluid", action="store_true",
                         help="Fix the RANS fluid field at IC values (step through GT "

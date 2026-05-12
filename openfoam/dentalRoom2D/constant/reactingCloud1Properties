@@ -1,0 +1,174 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | foam-extend: Open Source CFD                    |
+|  \\    /   O peration     | Version:     4.1                                |
+|   \\  /    A nd           | Web:         http://www.foam-extend.org         |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      reactingCloud1Properties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+
+active          true;
+
+InjectionModel  ConeInjection;
+
+DragModel       SphereDrag;
+
+DispersionModel StochasticDispersionRAS;
+
+PatchInteractionModel StandardWallInteraction;
+
+HeatTransferModel RanzMarshall;
+
+CompositionModel SinglePhaseMixture;
+
+PhaseChangeModel LiquidEvaporation;
+
+DevolatilisationModel none;
+
+SurfaceReactionModel none;
+
+PostProcessingModel none;
+
+radiation       off;
+
+coupled         true;
+
+cellValueSourceCorrection on;
+
+parcelTypeId    1;
+
+// ---- Constant particle properties -----------------------------------------
+constantProperties
+{
+    rhoMin          rhoMin           [ 1 -3  0  0 0 ] 1e-15;
+    TMin            TMin             [ 0  0  0  1 0 ] 200;
+    pMin            pMin             [ 1 -1  2  0 0 ] 1000;
+    rho0            rho0             [ 1 -3  0  0 0 ] 1000;     // saliva ~ liquid water
+    minParticleMass minParticleMass  [ 1  0  0  0 0 ] 1e-15;
+    T0              T0               [ 0  0  0  1 0 ] 310;      // body temperature
+    cp0             cp0              [ 0  2 -2 -1 0 ] 4187;     // liquid water Cp
+    epsilon0        epsilon0         [ 0  0  0  0 0 ] 1;
+    f0              f0               [ 0  0  0  0 0 ] 0.5;
+    Tvap            Tvap             [ 0  0  0  1 0 ] 273;      // start evaporating above 273 K
+    Tbp             Tbp              [ 0  0  0  1 0 ] 373;      // boiling point
+    Pr              Pr               [ 0  0  0  0 0 ] 0.7;
+    LDevol          LDevol           [ 0  0  0  0 0 ] 0;
+    hRetentionCoeff hRetentionCoeff  [ 0  0  0  0 0 ] 1;
+    constantVolume  false;                                       // diameter shrinks
+}
+
+// ---- Carrier-phase field interpolation onto parcel positions --------------
+interpolationSchemes
+{
+    rho             cell;
+    U               cellPointFace;
+    mu              cell;
+    T               cell;
+    Cp              cell;
+    p               cell;
+}
+
+// ---- Parcel ODE integration -----------------------------------------------
+integrationSchemes
+{
+    U               Euler;
+    T               Analytical;     // analytical for stiff T equation
+}
+
+// ---- Particle forces ------------------------------------------------------
+// foam-extend 4.1 only ships gravity, virtualMass, pressureGradient.
+// Saffman lift is NOT available out-of-the-box; would require a custom plugin.
+particleForces
+{
+    gravity             on;
+    virtualMass         off;
+    Cvm                 0.5;
+    pressureGradient    off;
+    gradU               gradU;
+}
+
+// ---- Cone injection from patient oral cavity ------------------------------
+// Position: (2.40, 0.90, 0.005) m  — left edge of patient obstacle, oral height.
+// Direction: (-1, 0, 0)            — aimed horizontally toward dentist.
+// sweep.sh edits Umag and thetaOuter for parameter sweeps.
+ConeInjectionCoeffs
+{
+    SOI                 0.0;
+    parcelBasisType     mass;
+    massTotal           massTotal [ 1 0 0 0 0 ] 5.0e-3;       // 5 g total spray
+    duration            30.0;
+    parcelsPerSecond    5000;
+
+    position            ( 2.40  0.90  0.005 );
+    direction           (-1.0   0.0   0.0   );
+
+    volumeFlowRate      constant 5.0e-9;                       // 5 mm^3/s
+    Umag                constant 30.0;                         // edited by sweep.sh
+    thetaInner          constant 0.0;
+    thetaOuter          constant 20.0;                         // edited by sweep.sh
+
+    // Rosin-Rammler polydisperse droplet diameters (paper Sec. II):
+    //   d_mean ~ 20 um, n = 2, range [1, 50] um
+    parcelPDF
+    {
+        pdfType         RosinRammler;
+        RosinRammlerPDF
+        {
+            minValue        1.0e-06;
+            maxValue        5.0e-05;
+            d               ( 2.0e-05 );
+            n               ( 2.0     );
+        }
+    }
+}
+
+// ---- Wall interaction (deposition) ----------------------------------------
+StandardWallInteractionCoeffs
+{
+    type            escape;     // parcel removed on wall contact
+}
+
+// ---- Heat transfer --------------------------------------------------------
+RanzMarshallCoeffs
+{
+    BirdCorrection  off;        // dilute non-combusting cloud
+}
+
+// ---- Composition ----------------------------------------------------------
+// SinglePhaseMixture: 100 % liquid H2O (saliva ~= water).  This is the only
+// CompositionModel registered for reactingCloud in foam-extend 4.1.
+SinglePhaseMixtureCoeffs
+{
+    phases
+    (
+        liquid
+        {
+            H2O 1;
+        }
+    );
+}
+
+// ---- Phase change (Wells' D^2-law) ----------------------------------------
+// LiquidEvaporation evaluates Spalding mass-transfer number B_M from the
+// vapour pressure of H2O at droplet T_p vs. the carrier-phase Y_H2O.
+// This is mathematically equivalent to:
+//       d_p^2(t) = d_p,0^2 - K t,
+//       K = 8 rho_air D_v ln(1 + B_M) / rho_p
+// at constant ambient conditions.
+LiquidEvaporationCoeffs
+{
+    enthalpyTransfer    enthalpyDifference;     // latent heat sink in droplet
+    activeLiquids       ( H2O );
+}
+
+
+// ************************************************************************* //

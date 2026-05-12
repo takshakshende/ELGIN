@@ -1,14 +1,57 @@
-#!/bin/sh
-cd "${0%/*}" || exit 1
-. "${WM_PROJECT_DIR:?WM_PROJECT_DIR not set -- source foam-extend 4.1 first}/bin/tools/CleanFunctions"
+#!/bin/bash
+# =============================================================================
+# Allclean - remove generated files from the Revised_Dental case
+#
+# Usage:
+#   ./Allclean              # Full clean: remove time dirs, mesh, logs, VTK,
+#                           # postProcessing, runtime system dictionaries.
+# =============================================================================
 
-cleanCase
-rm -rf 0/uniform
-rm -rf lagrangian VTK
-rm -f  PyFoamHistory PyFoam*.analyzed
-# Keep the blockMeshDict; only strip the generated mesh files.
-rm -rf constant/polyMesh/boundary constant/polyMesh/faces* \
-       constant/polyMesh/neighbour* constant/polyMesh/owner* \
-       constant/polyMesh/points* constant/polyMesh/cellZones* \
-       constant/polyMesh/faceZones* constant/polyMesh/pointZones* \
-       constant/polyMesh/sets
+cd "${0%/*}" || exit 1
+
+KEEP_OUTPUT=0
+for arg in "$@"; do
+    case "$arg" in
+        --keep-output) KEEP_OUTPUT=1 ;;
+        -h|--help)
+            sed -n '2,12p' "$0"
+            exit 0
+            ;;
+    esac
+done
+
+if [ "${KEEP_OUTPUT}" -eq 1 ]; then
+    echo ">>> Cleaning Revised_Dental case (keeping VTK + postProcessing + logs)"
+else
+    echo ">>> Cleaning Revised_Dental case"
+fi
+
+# Remove time directories (keep 0.orig).  Both integer and floating-point
+# directory names are matched.
+for dir in [0-9]* [0-9]*.[0-9]*; do
+    [ -d "$dir" ] || continue
+    [ "$dir" = "0.orig" ] && continue
+    rm -rf "$dir"
+done
+
+# Remove generated mesh (keep blockMeshDict)
+rm -rf constant/polyMesh/points        \
+       constant/polyMesh/faces         \
+       constant/polyMesh/owner         \
+       constant/polyMesh/neighbour     \
+       constant/polyMesh/boundary      \
+       constant/polyMesh/cellLevel     \
+       constant/polyMesh/pointLevel    \
+       constant/polyMesh/refinementHistory
+
+# Remove the runtime-active system dictionaries; their phase-specific
+# templates (controlDict.rans, controlDict.lagrangian, fvSchemes.rans,
+# fvSchemes.lagrangian, fvSolution.rans, fvSolution.lagrangian) remain.
+rm -f system/controlDict system/fvSchemes system/fvSolution
+
+if [ "${KEEP_OUTPUT}" -eq 0 ]; then
+    rm -f log.* Allrun.log
+    rm -rf postProcessing/ VTK/ dynamicCode/ processor*
+fi
+
+echo ">>> Done."
