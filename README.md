@@ -395,7 +395,7 @@ If you use ELGIN in your research, please cite:
 @article{Shende2026ELGIN,
   title   = {Physics-Informed Graph Neural Network Surrogates for Turbulent
              Nanoparticle Dispersion in Dental Clinical Environments},
-  author  = {Shende, Takshak},
+  author  = {Shende, Takshak and Popov, Viktor},
   journal = {arXiv},
   year    = {2026},
   note    = {ELGIN: Eulerian--Lagrangian Graph Interaction Network},
